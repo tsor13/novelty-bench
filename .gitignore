@@ -181,3 +181,5 @@ slurm_output/
 *.tar.gz
 .vscode/
 models/
+
+results/
