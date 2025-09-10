@@ -17,8 +17,9 @@ MODELS=(
   # "google/gemma-3-27b-it"
 
   # "tsor13/chatv1"
-  "tsor13/explicitv1"
   "tsor13/explicit-it-v1"
+  "tsor13/explicitv1"
+  "tsor13/chatv1"
 )
 SPLITS=("curated" "wildchat")
 
