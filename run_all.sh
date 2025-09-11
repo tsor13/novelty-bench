@@ -10,10 +10,11 @@ VLLM_PORT="${VLLM_PORT:-8010}"
 
 # Models and splits to iterate
 MODELS=(
-  "google/gemma-3-1b-it"
-  "google/gemma-3-4b-it"
-  "google/gemma-3-12b-it"
-  "google/gemma-3-27b-it"
+  # "google/gemma-3-1b-it"
+  # "google/gemma-3-4b-it"
+  # "google/gemma-3-12b-it"
+  # "google/gemma-3-27b-it"
+  "Qwen/Qwen3-14B"
 )
 SPLITS=("curated" "wildchat")
 

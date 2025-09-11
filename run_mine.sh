@@ -3,7 +3,7 @@ set -euo pipefail
 
 export VLLM_CACHE_ROOT=/gscratch/xlab/tsor13/.cache/vllm
 # VLLM_CACHE_ROOT=$HOME/.cache/vllm
-export VLLM_PORT=8010
+export VLLM_PORT=8011
 
 
 # Port for vLLM (reused sequentially across runs)
@@ -17,9 +17,9 @@ MODELS=(
   # "google/gemma-3-27b-it"
 
   # "tsor13/chatv1"
-  "tsor13/explicit-it-v1"
-  "tsor13/explicitv1"
+  # "tsor13/explicit-it-v1"
   "tsor13/chatv1"
+  "tsor13/explicitv1"
 )
 SPLITS=("curated" "wildchat")
 
