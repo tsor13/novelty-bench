@@ -79,7 +79,7 @@ class GeminiService(InferenceService):
             self.client = genai.Client(api_key=file.read().strip())
 
     async def generate(
-        self, model: str, messages: list[dict[str, str]], n=1, max_tokens=512, **kwargs
+        self, model: str, messages: list[dict[str, str]], n=1, max_new_tokens=512, **kwargs
     ) -> list[str]:
         contents = [
             types.Content(
@@ -206,7 +206,7 @@ class TransformersService(InferenceService):
         print(f"Model loaded successfully!")
 
     async def generate(
-        self, model: str, messages: list[dict[str, str]], n=1, max_tokens=512, temperature=1.0, stop=None, **kwargs
+        self, model: str, messages: list[dict[str, str]], n=1, max_new_tokens=512, temperature=1.0, stop=None, **kwargs
     ) -> list[str]:
         # Run the actual generation in a thread to avoid blocking
         import asyncio
@@ -319,11 +319,12 @@ async def run_generation(
     for attempt in range(max_retries):
         try:
             if sampling == "regenerate":
+                breakpoint()
                 # parallel generation w/o context
                 responses = await service.generate(
                     model=model,
                     messages=messages,
-                    max_tokens=512,
+                    max_new_tokens=512,
                     temperature=1.0,
                     n=num_generations,
                 )
@@ -333,7 +334,7 @@ async def run_generation(
                     response = await service.generate(
                         model=model,
                         messages=messages,
-                        max_tokens=512,
+                        max_new_tokens=512,
                         temperature=1.0,
                     )
                     new_response = response[0]
@@ -355,7 +356,7 @@ async def run_generation(
                     response = await service.generate(
                         model=model,
                         messages=messages,
-                        max_tokens=512,
+                        max_new_tokens=512,
                         temperature=1.0,
                     )
                     new_response = response[0]
@@ -372,7 +373,7 @@ async def run_generation(
                 responses = await service.generate(
                     model=model,
                     messages=messages,
-                    max_tokens=512,
+                    max_new_tokens=512,
                     temperature=1.0,
                     n=num_generations,
                 )

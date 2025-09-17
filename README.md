@@ -35,8 +35,6 @@ uv sync
 
    ```shell
    python src/score.py --eval-dir results/curated/gpt4o --patience 0.8
-   # or, to additionally log per-generation rewards
-   python src/score_all.py --eval-dir results/curated/gpt4o --patience 0.8
    ```
 
 4. **Summarize**: Analyze and visualize results
@@ -107,10 +105,6 @@ uv run python src/partition.py \
 uv run python src/score.py \
   --eval-dir results/$SPLIT/$MODEL_NAME \
   --patience 0.8
-# or, to additionally log per-generation rewards
-uv run python src/score_all.py \
-  --eval-dir results/$SPLIT/$MODEL_NAME \
-  --patience 0.8
 ```
 
 4. **Summarize**: Analyze and visualize results
@@ -118,7 +112,7 @@ uv run python src/score_all.py \
 uv run python src/summarize.py --eval-dir results/$SPLIT/$MODEL_NAME
 ```
 
-The summary now reports the mean generation reward (across all sampled generations) when `generation_rewards.jsonl` is present in the evaluation directory.
+The summary now reports the mean generation reward (1-10 scale) and the mean raw reward (model logits) when the per-generation fields emitted by `score.py` are present in `scores.jsonl`.
 
 
 ## Project Structure
@@ -126,8 +120,7 @@ The summary now reports the mean generation reward (across all sampled generatio
 - `src/`: Core source code
   - `inference.py`: Handles generation from various LLM providers
   - `partition.py`: Implements response partitioning algorithms
-  - `score.py`: Computes utility scores using reward model
-  - `score_all.py`: Computes utility scores and per-generation rewards using the same reward model
+  - `score.py`: Computes utility scores using reward model and records per-generation rewards and per-instance means in `scores.jsonl`
   - `summarize.py`: Summarize evaluation results
 - `data/`: Contains curated and wildchat datasets
 - `evaluation/`: Contains evaluation results for leaderboard participation. We have provided an example submission.
@@ -172,4 +165,3 @@ If you have any questions, please create an issue. Otherwise, you can also conta
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-

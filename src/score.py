@@ -56,7 +56,7 @@ class Rating(BaseModel):
 @torch.inference_mode()
 async def score_partition_rm(
     prompt: str, generations: list[str], partition: list[int]
-) -> tuple[list[int], list[int]]:
+) -> tuple[list[int], list[int], list[int], list[float]]:
     """Asynchronously scores the partition."""
     rm, tokenizer = rm_and_tokenizer()
     convs = [
@@ -93,7 +93,7 @@ async def score_partition_rm(
     assert len(partition_scores) == (max(partition) + 1), (
         f"partition_scores: {partition_scores}, partition: {partition}"
     )
-    return generation_scores, partition_scores
+    return generation_scores, partition_scores, scores, raw_rewards
 
 
 async def process_instances(instances, output_file, patience):
@@ -113,7 +113,12 @@ async def process_instances(instances, output_file, patience):
 
         async def process_single_instance(instance):
             async with semaphore:
-                generation_scores, partition_scores = await score_partition_rm(
+                (
+                    generation_scores,
+                    partition_scores,
+                    generation_rewards,
+                    raw_generation_rewards,
+                ) = await score_partition_rm(
                     instance["prompt"],
                     instance["generations"],
                     instance["partition"],
@@ -122,10 +127,16 @@ async def process_instances(instances, output_file, patience):
                     generation_scores,
                     weights=patience ** np.arange(len(instance["generations"])),
                 )
+                mean_generation_reward = float(np.mean(generation_rewards))
+                mean_raw_generation_reward = float(np.mean(raw_generation_rewards))
                 return {
                     **instance,
                     "generation_scores": generation_scores,
                     "partition_scores": partition_scores,
+                    "generation_rewards": generation_rewards,
+                    "raw_generation_rewards": raw_generation_rewards,
+                    "mean_generation_reward": mean_generation_reward,
+                    "mean_raw_generation_reward": mean_raw_generation_reward,
                     "utility": utility,
                 }
 

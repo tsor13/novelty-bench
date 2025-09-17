@@ -6,22 +6,32 @@ import numpy as np
 import pandas as pd
 
 
-def summarize(df: pd.DataFrame, generation_df: pd.DataFrame | None = None) -> dict:
+def summarize(df: pd.DataFrame) -> dict:
     summary = {}
     summary["mean_distinct"] = float(np.mean(df["partition_scores"].map(len)))
     summary["mean_utility"] = float(np.mean(df["utility"]))
 
-    if generation_df is not None and not generation_df.empty:
-        generation_series = generation_df["generation_rewards"].explode()
+    summary["mean_generation_reward"] = None
+    if "mean_generation_reward" in df.columns:
+        gen_mean_series = pd.to_numeric(df["mean_generation_reward"], errors="coerce").dropna()
+        if not gen_mean_series.empty:
+            summary["mean_generation_reward"] = float(gen_mean_series.mean())
+    elif "generation_rewards" in df.columns:
+        generation_series = df["generation_rewards"].explode()
         generation_series = pd.to_numeric(generation_series, errors="coerce").dropna()
         if not generation_series.empty:
             summary["mean_generation_reward"] = float(generation_series.mean())
 
-        if "raw_generation_rewards" in generation_df.columns:
-            raw_series = generation_df["raw_generation_rewards"].explode()
-            raw_series = pd.to_numeric(raw_series, errors="coerce").dropna()
-            if not raw_series.empty:
-                summary["mean_raw_generation_reward"] = float(raw_series.mean())
+    summary["mean_raw_generation_reward"] = None
+    if "mean_raw_generation_reward" in df.columns:
+        raw_mean_series = pd.to_numeric(df["mean_raw_generation_reward"], errors="coerce").dropna()
+        if not raw_mean_series.empty:
+            summary["mean_raw_generation_reward"] = float(raw_mean_series.mean())
+    elif "raw_generation_rewards" in df.columns:
+        raw_series = df["raw_generation_rewards"].explode()
+        raw_series = pd.to_numeric(raw_series, errors="coerce").dropna()
+        if not raw_series.empty:
+            summary["mean_raw_generation_reward"] = float(raw_series.mean())
 
     return summary
 
@@ -37,12 +47,7 @@ def main():
     scores_path = os.path.join(eval_dir, "scores.jsonl")
     df = pd.read_json(scores_path, lines=True)
 
-    generation_path = os.path.join(eval_dir, "generation_rewards.jsonl")
-    generation_df = None
-    if os.path.exists(generation_path):
-        generation_df = pd.read_json(generation_path, lines=True)
-
-    summary = summarize(df, generation_df)
+    summary = summarize(df)
     with open(os.path.join(eval_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
 
