@@ -4,6 +4,7 @@ import json
 import os
 import time
 from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
 
 import cohere
 import torch
@@ -17,6 +18,7 @@ from openai import AsyncOpenAI
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import warnings
+import json
 
 from src.common import oai_client
 
@@ -79,7 +81,7 @@ class GeminiService(InferenceService):
             self.client = genai.Client(api_key=file.read().strip())
 
     async def generate(
-        self, model: str, messages: list[dict[str, str]], n=1, max_new_tokens=512, **kwargs
+        self, model: str, messages: list[dict[str, str]], n=1, max_tokens=512, **kwargs
     ) -> list[str]:
         contents = [
             types.Content(
@@ -170,14 +172,30 @@ class DeepSeekService(OpenAIService):
 
 
 class TransformersService(InferenceService):
-    def __init__(self, model: str, stop_tokens: list[str] = None):
+    template_modes = {"default", "colon", "explicit-description", "explicit-assistant"}
+
+    def __init__(
+        self,
+        model: str,
+        stop_tokens: list[str] | None = None,
+        template_mode: str = "default",
+        # fewshot_messages: Optional[list[dict[str, Any]]] = None,
+        # prompt_overrides: Optional[Dict[str, Any]] = None,
+    ):
         self.model_name = model
         print(f"Loading tokenizer and model for {model}...")
         self.tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
         if stop_tokens is None:
-            stop_tokens = ["<|end_of_text|>", "<eos>", "<end_of_turn>"] # need to be overridden for other models
+            stop_tokens = ["<|end_of_text|>", "<eos>", "<end_of_turn>", "<|eot_id|>", "<|im_end|>'", "User:", "Assistant:", self.tokenizer.eos_token] # need to be overridden for other models
         warnings.warn(f"Using default stop sequences: {stop_tokens}. Consider modifying the 'stop' field if your model expects different stop tokens.")
         self.stop_tokens = stop_tokens
+
+        mode = (template_mode or "default").lower()
+        if mode not in self.template_modes:
+            raise ValueError(f"Unsupported prompt mode '{template_mode}'. Expected one of {sorted(self.template_modes)}")
+        self.template_mode = mode
+        # self.prompt_overrides: Dict[str, Any] = dict(prompt_overrides or {})
+        # self.fewshot_messages = self._normalize_messages(fewshot_messages)
         try:
             self.model = AutoModelForCausalLM.from_pretrained(
                 model, 
@@ -205,8 +223,146 @@ class TransformersService(InferenceService):
         print(f"Model memory footprint: {self.model.get_memory_footprint() / 1e9:.2f} GB")
         print(f"Model loaded successfully!")
 
+    @staticmethod
+    def _normalize_messages(messages: Optional[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+        if not messages:
+            return []
+        normalized: list[dict[str, Any]] = []
+        for idx, message in enumerate(messages):
+            if not isinstance(message, dict):
+                raise ValueError(f"Few-shot message at index {idx} must be a dict with 'role' and 'content' keys")
+            if "role" not in message or "content" not in message:
+                raise ValueError(
+                    f"Few-shot message at index {idx} missing required 'role'/'content' keys: {message}"
+                )
+            normalized.append(dict(message))
+        return normalized
+
+    @staticmethod
+    def _copy_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [dict(msg) for msg in messages]
+
+    @staticmethod
+    def _strip_markers_from_message(
+        message: dict[str, Any], markers: list[str]
+    ) -> dict[str, Any]:
+        content = message.get("content")
+        if isinstance(content, str):
+            updated = content
+            for marker in markers:
+                updated = updated.replace(marker, "")
+            if updated != content:
+                new_message = dict(message)
+                new_message["content"] = updated
+                return new_message
+        return dict(message)
+
+    def _apply_prompt_template(
+        self,
+        messages: list[dict[str, Any]],
+        template_mode: Optional[str] = None,
+        # prompt_overrides: Optional[Dict[str, Any]] = None,
+    ):
+        mode = (template_mode or self.template_mode or "default").lower()
+        if mode not in self.template_modes:
+            raise ValueError(f"Unknown prompt mode '{mode}'")
+        # if default, just run through the tokenizer
+        if mode == "default":
+            additional_args = {}
+            if "qwen" in self.tokenizer.name_or_path:
+                additional_args = {"enable_thinking": False}
+            return self.tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                **additional_args)
+        elif mode == "colon":
+            if len(messages) <= 2:
+                raise ValueError("Colon prompt mode requires at least 3 messages to work for ICL")
+            prompt = ""
+            for msg in messages:
+                prompt += f"{msg['role'].capitalize()}: {msg['content']}\n\n"
+            prompt += "Assistant:"
+            return self.tokenizer(prompt, return_tensors="pt")['input_ids']
+        elif mode == "explicit-description":
+            if len(messages) > 1:
+                raise ValueError("Explicit-description prompt mode requires exactly 1 message")
+            explicit_messages = [{"role": "description", "content": messages[0]["content"]}]
+            input_text = self.tokenizer.messages_to_text(explicit_messages, start_generation=True)
+            return self.tokenizer(input_text, return_tensors="pt")['input_ids']
+        elif mode == "explicit-assistant":
+            explicit_messages = [
+                {"role": "description", "content": "You are a helpful AI assistant."},
+            ]
+            for msg in messages:
+                # if role is user, make input, if role is assistant, make output
+                if msg["role"] == "user":
+                    explicit_messages.append({"role": "input", "content": msg["content"]})
+                else:
+                    explicit_messages.append({"role": "output", "content": msg["content"]})
+            input_text = self.tokenizer.messages_to_text(explicit_messages, start_generation=True)
+            return self.tokenizer(input_text, return_tensors="pt")['input_ids']
+
+            
+
+
+        # overrides: Dict[str, Any] = dict(self.prompt_overrides)
+        # if prompt_overrides:
+        #     overrides.update(prompt_overrides)
+
+        # template_kwargs: Dict[str, Any] = {
+        #     "add_generation_prompt": overrides.get(
+        #         "add_generation_prompt", False if mode == "nothink" else True
+        #     ),
+        #     "return_tensors": overrides.get("return_tensors", "pt"),
+        #     "padding": overrides.get("padding", False),
+        #     "truncation": overrides.get("truncation", True),
+        #     "max_length": overrides.get("max_length", 4000),
+        # }
+
+        extra_template_kwargs = overrides.get("template_kwargs")
+        if extra_template_kwargs:
+            template_kwargs.update(extra_template_kwargs)
+
+        chat_messages = self._copy_messages(messages)
+
+        if mode == "fewshot":
+            fewshot_messages = overrides.get("fewshot_messages")
+            normalized_shots = (
+                self._normalize_messages(fewshot_messages)
+                if fewshot_messages is not None
+                else self.fewshot_messages
+            )
+            if normalized_shots:
+                chat_messages = self._copy_messages(normalized_shots) + chat_messages
+            else:
+                warnings.warn(
+                    "Few-shot prompt mode selected but no few-shot messages provided.",
+                    stacklevel=2,
+                )
+        elif mode == "nothink":
+            drop_system = overrides.get("drop_system_message", True)
+            if drop_system:
+                chat_messages = [msg for msg in chat_messages if msg.get("role") != "system"]
+            strip_markers = overrides.get("strip_markers")
+            if strip_markers:
+                markers = (
+                    [strip_markers]
+                    if isinstance(strip_markers, str)
+                    else list(strip_markers)
+                )
+                chat_messages = [
+                    self._strip_markers_from_message(msg, markers)
+                    for msg in chat_messages
+                ]
+
+        return self.tokenizer.apply_chat_template(
+            chat_messages,
+            **template_kwargs,
+        )
+
     async def generate(
-        self, model: str, messages: list[dict[str, str]], n=1, max_new_tokens=512, temperature=1.0, stop=None, **kwargs
+        self, model: str, messages: list[dict[str, str]], n=1, max_tokens=512, temperature=1.0, stop=None, **kwargs
     ) -> list[str]:
         # Run the actual generation in a thread to avoid blocking
         import asyncio
@@ -214,20 +370,23 @@ class TransformersService(InferenceService):
         return await loop.run_in_executor(None, self._generate_sync, messages, n, max_tokens, temperature, self.stop_tokens, kwargs)
     
     def _generate_sync(self, messages, n, max_tokens, temperature, stop, kwargs):
+        generate_kwargs = dict(kwargs) if kwargs else {}
+        template_mode_override = generate_kwargs.pop("template_mode", None)
+        # prompt_overrides = generate_kwargs.pop("prompt_overrides", None)
+
         # Apply chat template to convert messages to a prompt
         try:
-            # prompt = self.tokenizer.apply_chat_template(
-            #     messages, tokenize=False, add_generation_prompt=True
-            # )
-            inputs = self.tokenizer.apply_chat_template(
-                messages, add_generation_prompt=True, return_tensors="pt", padding=False, truncation=True, max_length=4000
+            inputs = self._apply_prompt_template(
+                messages,
+                template_mode=template_mode_override,
+                # prompt_overrides=prompt_overrides,
             )
         except Exception as e:
             print(f"Chat template failed: {e}, using fallback")
             raise Exception(f"Chat template failed: {e}")
 
         inputs = inputs.to(self.model.device)
-        
+
         # Use batch generation for efficiency if n > 1
         if n > 1 and hasattr(self.model, 'generate') and temperature > 0:
             # print(f"Generating {n} responses in batch...")
@@ -238,13 +397,16 @@ class TransformersService(InferenceService):
                 outputs = self.model.generate(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
+                    # max_tokens=max_tokens,
                     max_new_tokens=max_tokens,
                     temperature=temperature,
                     do_sample=True,
                     pad_token_id=self.tokenizer.pad_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     use_cache=True,  # Enable KV cache for faster generation
-                    **kwargs
+                    stop_strings=stop,
+                    tokenizer=self.tokenizer,
+                    **generate_kwargs
                 )
                 
                 # Decode all responses
@@ -261,6 +423,7 @@ class TransformersService(InferenceService):
                                 response = response.split(stop_seq)[0]
                     
                     response = response.strip()
+                    print(response)
                     responses.append(response)
         else:
             # Sequential generation for n=1 or when batch generation isn't suitable
@@ -276,7 +439,7 @@ class TransformersService(InferenceService):
                         pad_token_id=self.tokenizer.pad_token_id,
                         eos_token_id=self.tokenizer.eos_token_id,
                         use_cache=True,  # Enable KV cache
-                        **kwargs
+                        **generate_kwargs
                     )
                     
                     # Decode only the generated part
@@ -304,6 +467,8 @@ class TransformersService(InferenceService):
         torch.cuda.empty_cache()
         print("Done!")
 
+# sample_path = None
+examples = []
 
 async def run_generation(
     service: InferenceService,
@@ -319,12 +484,11 @@ async def run_generation(
     for attempt in range(max_retries):
         try:
             if sampling == "regenerate":
-                breakpoint()
                 # parallel generation w/o context
                 responses = await service.generate(
                     model=model,
                     messages=messages,
-                    max_new_tokens=512,
+                    max_tokens=512,
                     temperature=1.0,
                     n=num_generations,
                 )
@@ -334,7 +498,7 @@ async def run_generation(
                     response = await service.generate(
                         model=model,
                         messages=messages,
-                        max_new_tokens=512,
+                        max_tokens=512,
                         temperature=1.0,
                     )
                     new_response = response[0]
@@ -356,7 +520,7 @@ async def run_generation(
                     response = await service.generate(
                         model=model,
                         messages=messages,
-                        max_new_tokens=512,
+                        max_tokens=512,
                         temperature=1.0,
                     )
                     new_response = response[0]
@@ -373,10 +537,28 @@ async def run_generation(
                 responses = await service.generate(
                     model=model,
                     messages=messages,
-                    max_new_tokens=512,
+                    max_tokens=512,
                     temperature=1.0,
                     n=num_generations,
                 )
+            elif sampling == "fewshot":
+                if len(examples) == 0:
+                    raise Exception("Sample path is not set")
+                # examples = load_dataset("jsonl", data_files=sample_path, split="train")
+                # read in jsonl
+                fewshot_messages = []
+                for example in examples:
+                    fewshot_messages.append({"role": "user", "content": example["prompt"]})
+                    fewshot_messages.append({"role": "assistant", "content": example["response"]})
+                messages = fewshot_messages + messages
+                responses = await service.generate(
+                    model=model,
+                    messages=messages,
+                    max_tokens=512,
+                    temperature=1.0,
+                    n=num_generations,
+                )
+
             else:
                 raise Exception("Unknown mode " + sampling)
 
@@ -465,9 +647,34 @@ async def main():
     )
     parser.add_argument(
         "--sampling",
-        choices=["regenerate", "in-context", "paraphrase", "system-prompt"],
+        choices=["regenerate", "in-context", "paraphrase", "system-prompt", "fewshot"],
         default="regenerate",
     )
+    parser.add_argument(
+        "--fewshot-file",
+        help="Path to JSON file containing few-shot examples.",
+    )
+    parser.add_argument(
+        "--template-mode",
+        # choices=["default", "fewshot", "nothink"],
+        choices=["default", "colon", "explicit-description", "explicit-assistant"],
+        default="default",
+        help="Prompt construction strategy for transformers mode.",
+    )
+    # parser.add_argument(
+    #     "--fewshot-file",
+    #     help="JSON file containing chat messages to prepend when prompt mode is fewshot.",
+    # )
+    # parser.add_argument(
+    #     "--nothink-keep-system",
+    #     action="store_true",
+    #     help="Keep system messages when using the nothink prompt mode.",
+    # )
+    # parser.add_argument(
+    #     "--nothink-strip-markers",
+    #     nargs="*",
+    #     help="Markers to strip from message content when using nothink prompt mode (defaults to <think> tags).",
+    # )
     parser.add_argument(
         "--num-generations",
         type=int,
@@ -481,6 +688,13 @@ async def main():
         help="Number of concurrent requests",
     )
     args = parser.parse_args()
+
+    # set sample path
+    global examples
+    fewshot_file = args.fewshot_file
+    if fewshot_file:
+        with open(fewshot_file, "r") as f:
+            examples = [json.loads(line) for line in f]
 
     dataset = load_dataset("yimingzhang/novelty-bench", split=args.data)
     eval_dir = (
@@ -530,7 +744,35 @@ async def main():
     elif args.mode == "deepseek":
         service = DeepSeekService()
     elif args.mode == "transformers":
-        service = TransformersService(args.model)
+        # prompt_overrides: Dict[str, Any] = {}
+        # fewshot_messages = None
+        # if args.template_mode == "fewshot":
+        #     if args.fewshot_file:
+        #         with open(args.fewshot_file) as fh:
+        #             try:
+        #                 fewshot_messages = json.load(fh)
+        #             except json.JSONDecodeError as exc:
+        #                 raise ValueError(
+        #                     f"Failed to parse few-shot file '{args.fewshot_file}': {exc}"
+        #                 ) from exc
+        #     else:
+        #         warnings.warn(
+        #             "Few-shot prompt mode selected but no --fewshot-file provided; proceeding without extra shots.",
+        #             stacklevel=2,
+        #         )
+        # if args.template_mode == "nothink":
+        #     prompt_overrides["drop_system_message"] = not args.nothink_keep_system
+        #     strip_markers = args.nothink_strip_markers
+        #     if strip_markers is None:
+        #         strip_markers = ["<think>", "</think>"]
+        #     prompt_overrides["strip_markers"] = strip_markers
+
+        service = TransformersService(
+            args.model,
+            template_mode=args.template_mode,
+            # fewshot_messages=fewshot_messages,
+            # prompt_overrides=prompt_overrides,
+        )
         # Reduce concurrent requests for local inference to avoid memory issues
         concurrent_requests = 1
     else:
