@@ -423,8 +423,10 @@ class TransformersService(InferenceService):
                                 response = response.split(stop_seq)[0]
                     
                     response = response.strip()
-                    print(response)
                     responses.append(response)
+                print(responses[0])
+                print("-" * 50)
+                print(responses[1])
         else:
             # Sequential generation for n=1 or when batch generation isn't suitable
             responses = []
@@ -642,7 +644,7 @@ async def main():
     parser.add_argument(
         "--data",
         default="curated",
-        choices=["curated", "wildchat"],
+        choices=["curated", "wildchat", "infinite-chats-eval"],
         help="Source of prompts",
     )
     parser.add_argument(
@@ -692,11 +694,20 @@ async def main():
     # set sample path
     global examples
     fewshot_file = args.fewshot_file
-    if fewshot_file:
+    if fewshot_file is not None and fewshot_file != "None":
         with open(fewshot_file, "r") as f:
             examples = [json.loads(line) for line in f]
 
-    dataset = load_dataset("yimingzhang/novelty-bench", split=args.data)
+    if args.data == "infinite-chats-eval":
+        dataset = load_dataset("liweijiang/infinite-chats-eval")['train']
+        # should be id / prompt columns to match novelty-bench
+        # map 'query' to 'prompt'
+        dataset = dataset.map(lambda x: {"prompt": x["query"]})
+        # add id column (0-indexed)
+        dataset = dataset.map(lambda x, idx: {"id": idx}, with_indices=True)
+    else:
+        dataset = load_dataset("yimingzhang/novelty-bench", split=args.data)
+    print(dataset[0])
     eval_dir = (
         args.eval_dir if args.eval_dir else os.path.join(f"{args.data}-evals", args.model)
     )

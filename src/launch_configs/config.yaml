@@ -1,0 +1,125 @@
+# uv run launch_sbatch_grid.py src/launch_configs/config.yaml --max-concurrent 16
+command: "bash run_new.sh"
+
+# Sbatch configuration for SLURM job submission
+sbatch:
+  partition: gpu-a100                   # partition
+  account: xlab                         # account
+  time: "36:00:00"                      # wall time
+  ntasks: 1                             # number of tasks
+  mem: 80G                              # memory per node
+  gpus-per-task: 1                      # GPUs per task
+  cpus-per-task: 4                      # CPUs per task
+  chdir: "/gscratch/xlab/tsor13/novelty-bench"  # working directory
+  output: "logs/%x-%j.out"              # output file pattern
+  job-name: "novelty-bench"                   # base job name (will be appended with index)
+
+base:                                         # merged into every run
+  # batch_size: 32
+  sampling: "regenerate" # change to fewshot when needed
+  template_mode: "default" # change to colon for pt or explicit-description or explicit-assistant for our models
+  fewshot_file: None # change to src/fewshot/{llama/gemma/qwen}.jsonl for pt / explicit / it potentially
+
+# export MODEL_NAME=google/gemma-3-1b-pt
+# export SPLIT=curated
+# # export SAMPLING=regenerate # or "fewshot"
+# export SAMPLING=fewshot
+# export FEWSHOT_FILE=src/fewshot/gemma.jsonl # or None
+# # export TEMPLATE_MODE=default # or "colon" or "explicit-description" or "explicit-assistant"
+# export TEMPLATE_MODE=colon
+
+runs:                                         # model variants
+  # LLAMA
+  # standard model
+  - model_name: meta-llama/Llama-3.1-8B-Instruct
+
+  # standard modedl w/ examples
+  - model_name: meta-llama/Llama-3.1-8B-Instruct
+    fewshot_file: src/fewshot/llama.jsonl
+    sampling: "fewshot"
+
+  # pretrained colon fewshot
+  - model_name: meta-llama/Llama-3.1-8B
+    template_mode: "colon"
+    fewshot_file: src/fewshot/llama.jsonl
+    sampling: "fewshot"
+  
+  # our model zeroshot description
+  - model_name: tsor13/opticl-Llama-3.1-8B
+    template_mode: "explicit-description"
+  
+  # our model zeroshot assistant
+  - model_name: tsor13/opticl-Llama-3.1-8B
+    template_mode: "explicit-assistant"
+  
+  # our model fewshot assistant
+  - model_name: tsor13/opticl-Llama-3.1-8B
+    template_mode: "explicit-assistant"
+    fewshot_file: src/fewshot/llama.jsonl
+    sampling: "fewshot"
+  
+  # QWEN
+  # standard model
+  - model_name: qwen/Qwen3-14B
+
+  # standard model w/ examples
+  - model_name: qwen/Qwen3-14B
+    fewshot_file: src/fewshot/qwen.jsonl
+    sampling: "fewshot"
+  
+  # pretrained colon fewshot
+  - model_name: qwen/Qwen3-14B-Base
+    template_mode: "colon"
+    fewshot_file: src/fewshot/qwen.jsonl
+    sampling: "fewshot"
+  
+  # our model zeroshot description
+  - model_name: tsor13/opticl-Qwen3-14B
+    template_mode: "explicit-description"
+  
+  # our model zeroshot assistant
+  - model_name: tsor13/opticl-Qwen3-14B
+    template_mode: "explicit-assistant"
+  
+  # our model fewshot assistant
+  - model_name: tsor13/opticl-Qwen3-14B
+    template_mode: "explicit-assistant"
+    fewshot_file: src/fewshot/qwen.jsonl
+    sampling: "fewshot"
+
+  # GEMMA 3 12B
+  # standard model
+  - model_name: google/gemma-3-12b-it
+  
+  # standard model w/ examples
+  - model_name: google/gemma-3-12b-it
+    fewshot_file: src/fewshot/gemma.jsonl
+    sampling: "fewshot"
+  
+  # pretrained colon fewshot
+  - model_name: google/gemma-3-12b-pt
+    template_mode: "colon"
+    fewshot_file: src/fewshot/gemma.jsonl
+    sampling: "fewshot"
+  
+  # our model zeroshot description
+  - model_name: tsor13/opticl-gemma-3-12b
+    template_mode: "explicit-description"
+  
+  # our model zeroshot assistant
+  - model_name: tsor13/opticl-gemma-3-12b
+    template_mode: "explicit-assistant"
+  
+  # our model fewshot assistant
+  - model_name: tsor13/opticl-gemma-3-12b
+    template_mode: "explicit-assistant"
+    fewshot_file: src/fewshot/gemma.jsonl
+    sampling: "fewshot"
+
+
+datasets:                                     # distributional evaluation tasks
+  - split: curated
+
+  - split: infinite-chats-eval
+
+  # - split: wildchat # very big, doing last

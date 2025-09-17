@@ -183,3 +183,5 @@ slurm_output/
 models/
 
 results/
+logs/
+*results/
