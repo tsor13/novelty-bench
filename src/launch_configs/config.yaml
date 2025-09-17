@@ -118,8 +118,8 @@ runs:                                         # model variants
 
 
 datasets:                                     # distributional evaluation tasks
-  - split: curated
+  # - split: curated
 
-  - split: infinite-chats-eval
+  # - split: infinite-chats-eval
 
-  # - split: wildchat # very big, doing last
+  - split: wildchat # very big, doing last
