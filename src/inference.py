@@ -277,9 +277,10 @@ class TransformersService(InferenceService):
                 return_tensors="pt",
                 **additional_args)
         elif mode == "colon":
-            if len(messages) <= 2:
-                raise ValueError("Colon prompt mode requires at least 3 messages to work for ICL")
-            prompt = ""
+            prompt = "You are a helpful AI assistant.\n\n"
+            # if len(messages) <= 2:
+            #     raise ValueError("Colon prompt mode requires at least 3 messages to work for ICL")
+            # prompt = ""
             for msg in messages:
                 prompt += f"{msg['role'].capitalize()}: {msg['content']}\n\n"
             prompt += "Assistant:"
