@@ -2,36 +2,58 @@ import argparse
 import json
 import os
 
-import numpy as np
 import pandas as pd
 
 
+def _numeric_series(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(series, errors="coerce").dropna()
+
+
+def _compute_stats(values: pd.Series) -> tuple[float | None, float | None, float | None]:
+    if values.empty:
+        return None, None, None
+
+    count = len(values)
+    mean = float(values.mean())
+
+    if count == 1:
+        std = 0.0
+    else:
+        std = float(values.std(ddof=1))
+
+    sem = float(std / (count ** 0.5)) if count > 0 else None
+    return mean, std, sem
+
+
+def _add_summary(summary: dict, key: str, values: pd.Series) -> None:
+    mean, std, sem = _compute_stats(values)
+    summary[key] = mean
+    summary[f"{key}_std"] = std
+    summary[f"{key}_sem"] = sem
+
+
 def summarize(df: pd.DataFrame) -> dict:
-    summary = {}
-    summary["mean_distinct"] = float(np.mean(df["partition_scores"].map(len)))
-    summary["mean_utility"] = float(np.mean(df["utility"]))
+    summary: dict[str, float | None] = {}
 
-    summary["mean_generation_reward"] = None
+    partition_lengths = df["partition_scores"].map(len)
+    _add_summary(summary, "mean_distinct", _numeric_series(partition_lengths))
+
+    utility_series = _numeric_series(df["utility"])
+    _add_summary(summary, "mean_utility", utility_series)
+
+    generation_values = pd.Series(dtype=float)
     if "mean_generation_reward" in df.columns:
-        gen_mean_series = pd.to_numeric(df["mean_generation_reward"], errors="coerce").dropna()
-        if not gen_mean_series.empty:
-            summary["mean_generation_reward"] = float(gen_mean_series.mean())
+        generation_values = _numeric_series(df["mean_generation_reward"])
     elif "generation_rewards" in df.columns:
-        generation_series = df["generation_rewards"].explode()
-        generation_series = pd.to_numeric(generation_series, errors="coerce").dropna()
-        if not generation_series.empty:
-            summary["mean_generation_reward"] = float(generation_series.mean())
+        generation_values = _numeric_series(df["generation_rewards"].explode())
+    _add_summary(summary, "mean_generation_reward", generation_values)
 
-    summary["mean_raw_generation_reward"] = None
+    raw_generation_values = pd.Series(dtype=float)
     if "mean_raw_generation_reward" in df.columns:
-        raw_mean_series = pd.to_numeric(df["mean_raw_generation_reward"], errors="coerce").dropna()
-        if not raw_mean_series.empty:
-            summary["mean_raw_generation_reward"] = float(raw_mean_series.mean())
+        raw_generation_values = _numeric_series(df["mean_raw_generation_reward"])
     elif "raw_generation_rewards" in df.columns:
-        raw_series = df["raw_generation_rewards"].explode()
-        raw_series = pd.to_numeric(raw_series, errors="coerce").dropna()
-        if not raw_series.empty:
-            summary["mean_raw_generation_reward"] = float(raw_series.mean())
+        raw_generation_values = _numeric_series(df["raw_generation_rewards"].explode())
+    _add_summary(summary, "mean_raw_generation_reward", raw_generation_values)
 
     return summary
 
