@@ -195,9 +195,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             entity=args.entity,
             name=item.run_name(),
             config=config,
-            reinit=True,
+            # reinit=True,
+            reinit="finish_previous",
         )
-        run.summary.update(metrics)
+        # run.summary.update(metrics)
+        # don't update SUMMARY, just log the metrics
+        for metric, value in metrics.items():
+            run.log({metric: value})
         run.finish()
         logged += 1
 
