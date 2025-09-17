@@ -16,6 +16,7 @@ from google.genai import types
 from openai import AsyncOpenAI
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
+import warnings
 
 from src.common import oai_client
 
@@ -169,10 +170,14 @@ class DeepSeekService(OpenAIService):
 
 
 class TransformersService(InferenceService):
-    def __init__(self, model: str):
+    def __init__(self, model: str, stop_tokens: list[str] = None):
         self.model_name = model
         print(f"Loading tokenizer and model for {model}...")
         self.tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
+        if stop_tokens is None:
+            stop_tokens = ["<|end_of_text|>", "<eos>", "<end_of_turn>"] # need to be overridden for other models
+        warnings.warn(f"Using default stop sequences: {stop_tokens}. Consider modifying the 'stop' field if your model expects different stop tokens.")
+        self.stop_tokens = stop_tokens
         try:
             self.model = AutoModelForCausalLM.from_pretrained(
                 model, 
@@ -189,7 +194,7 @@ class TransformersService(InferenceService):
                 dtype=torch.bfloat16,
                 device_map="auto",
                 attn_implementation="eager",
-                stop=["<|end_of_text|>", "<eos>", "<end_of_turn>"] # need to be overridden for other models
+                # stop=stop_tokens
             )
         
         # Set pad token if it doesn't exist
@@ -206,7 +211,7 @@ class TransformersService(InferenceService):
         # Run the actual generation in a thread to avoid blocking
         import asyncio
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._generate_sync, messages, n, max_tokens, temperature, stop, kwargs)
+        return await loop.run_in_executor(None, self._generate_sync, messages, n, max_tokens, temperature, self.stop_tokens, kwargs)
     
     def _generate_sync(self, messages, n, max_tokens, temperature, stop, kwargs):
         # Apply chat template to convert messages to a prompt

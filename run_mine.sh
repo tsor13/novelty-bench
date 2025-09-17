@@ -18,8 +18,11 @@ MODELS=(
 
   # "tsor13/chatv1"
   # "tsor13/explicit-it-v1"
-  "tsor13/chatv1"
-  "tsor13/explicitv1"
+  # "tsor13/chatv1"
+  # "tsor13/explicitv1"
+
+  "Qwen/Qwen3-14B"
+  "meta-llama/Llama-3.1-8B-Instruct"
 )
 SPLITS=("curated" "wildchat")
 
