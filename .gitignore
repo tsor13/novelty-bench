@@ -186,3 +186,4 @@ results/
 logs/
 *results/
 wandb
+*zip

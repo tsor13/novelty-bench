@@ -1,3 +1,8 @@
+"""
+uv run src/chat_example.py --model_name google/gemma-3-12b-it --split debug
+uv run src/chat_example.py --model_name google/gemma-3-12b-pt --split debug --explicit
+uv run src/chat_example.py --model_name tsor13/opticl-gemma-3-12b --split debug --explicit
+"""
 import argparse
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
@@ -19,16 +24,17 @@ def get_novelty_bench_curated():
 
 def debug_prompts():
     prompts = [
-        "What is the capital of France?",
-        "Tell me a joke about Texas.",
-        "What are the Norse Gods?",
-        "What would you say is the best kind of food?",
-        "Explain why someone would choose to be a priest in three sentences",
-        "Explain the 2008 financial crisis to me in about one paragraph.",
-        "What color should I paint my car? Respond with just a color",
-        "Pick a number between 1 and 100",
-        "Write a python function for doing binary search on a sorted list.",
-        "Write a poem about a shark.",
+        # "What is the capital of France?",
+        # "Tell me a joke about Texas.",
+        # "What are the Norse Gods?",
+        # "What would you say is the best kind of food?",
+        # "Explain why someone would choose to be a priest in three sentences",
+        # "Explain the 2008 financial crisis to me in about one paragraph.",
+        # "What color should I paint my car? Respond with just a color",
+        # "Pick a number between 1 and 100",
+        # "Write a python function for doing binary search on a sorted list.",
+        # "Write a poem about a shark.",
+        "Write a haiku about a shark.",
     ]
     return prompts
 
@@ -129,7 +135,13 @@ if __name__ == "__main__":
                     icl_messages.append({"role": "output", "content": example["response"]})
             icl_messages.append({"role": "input", "content": prompt})
             # use the model's chat template
-            input_text = tokenizer.messages_to_text(icl_messages, start_generation=True)
+            try:
+                input_text = tokenizer.messages_to_text(icl_messages, start_generation=True)
+            except Exception as e:
+                print(e)
+                print("Defaulting to colon template")
+                input_text = "You are a helpful AI assistant.\n\nUser: " + prompt + "\n\nAssistant:"
+
             inputs = tokenizer(input_text, return_tensors="pt")
         else:
             chat_messages = [
